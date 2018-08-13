@@ -1,0 +1,104 @@
+From 72799f1b12f6e8f30e1508096454a2740459cab3 Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Mon, 30 Jul 2018 12:53:01 +0200
+Subject: [PATCH v2 21/34] test/qgraph: virtio-serial test node
+
+Convert tests/virtio-serial-test in qgraph test node,
+virtio-serial-test. This test consumes a virtio-serial interface
+and checks that its function return the expected values.
+
+Note that this test does not allocate any virtio-serial structure,
+it's all done by the qtest walking graph mechanism
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/Makefile.include     |  4 +---
+ tests/virtio-serial-test.c | 27 +++++++++------------------
+ 2 files changed, 10 insertions(+), 21 deletions(-)
+
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index 6742f97058..f258a7778e 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -205,7 +205,6 @@ check-qtest-virtio-y += tests/virtio-9p-test$(EXESUF)
+ gcov-files-virtio-y += hw/9pfs/virtio-9p.c
+ gcov-files-virtio-y += i386-softmmu/hw/9pfs/virtio-9p-device.c
+ endif
+-check-qtest-virtio-y += tests/virtio-serial-test$(EXESUF)
+ gcov-files-virtio-y += i386-softmmu/hw/char/virtio-serial-bus.c
+ check-qtest-virtio-y += $(check-qtest-virtioserial-y)
+ gcov-files-virtio-y += $(gcov-files-virtioserial-y)
+@@ -398,7 +397,6 @@ check-qtest-s390x-$(CONFIG_POSIX) += tests/test-filter-redirector$(EXESUF)
+ check-qtest-s390x-y += tests/drive_del-test$(EXESUF)
+ check-qtest-s390x-y += tests/virtio-ccw-test$(EXESUF)
+ check-qtest-s390x-y += tests/virtio-balloon-test$(EXESUF)
+-check-qtest-s390x-y += tests/virtio-serial-test$(EXESUF)
+ check-qtest-s390x-y += tests/cpu-plug-test$(EXESUF)
+ 
+ check-qtest-generic-y += tests/machine-none-test$(EXESUF)
+@@ -782,6 +780,7 @@ libqgraph-pci-obj-y += tests/libqos/e1000e.o
+ libqgraph-tests-obj-y = $(libqgraph-pci-obj-y)
+ libqgraph-tests-obj-y += tests/sdhci-test.o
+ libqgraph-tests-obj-y += tests/e1000e-test.o
++libqgraph-tests-obj-y += tests/virtio-serial-test.o
+ libqgraph-tests-obj-y += tests/virtio-console-test.o
+ 
+ check-unit-y += tests/test-qgraph$(EXESUF)
+@@ -832,7 +831,6 @@ tests/virtio-net-test$(EXESUF): tests/virtio-net-test.o $(libqos-pc-obj-y) $(lib
+ tests/virtio-rng-test$(EXESUF): tests/virtio-rng-test.o $(libqos-pc-obj-y)
+ tests/virtio-scsi-test$(EXESUF): tests/virtio-scsi-test.o $(libqos-virtio-obj-y)
+ tests/virtio-9p-test$(EXESUF): tests/virtio-9p-test.o $(libqos-virtio-obj-y)
+-tests/virtio-serial-test$(EXESUF): tests/virtio-serial-test.o $(libqos-virtio-obj-y)
+ tests/tpci200-test$(EXESUF): tests/tpci200-test.o
+ tests/display-vga-test$(EXESUF): tests/display-vga-test.o
+ tests/ipoctal232-test$(EXESUF): tests/ipoctal232-test.o
+diff --git a/tests/virtio-serial-test.c b/tests/virtio-serial-test.c
+index 7cc7060264..1691811f85 100644
+--- a/tests/virtio-serial-test.c
++++ b/tests/virtio-serial-test.c
+@@ -9,33 +9,24 @@
+ 
+ #include "qemu/osdep.h"
+ #include "libqtest.h"
+-#include "libqos/virtio.h"
++#include "libqos/virtio-serial.h"
+ 
+ /* Tests only initialization so far. TODO: Replace with functional tests */
+-static void virtio_serial_nop(void)
++static void virtio_serial_nop(void *obj, void *data, QGuestAllocator *alloc)
+ {
++    /* no operation */
+ }
+ 
+-static void hotplug(void)
++static void serial_hotplug(void *obj, void *data, QGuestAllocator *alloc)
+ {
+     qtest_qmp_device_add("virtserialport", "hp-port", NULL);
+-
+     qtest_qmp_device_del("hp-port");
+ }
+ 
+-int main(int argc, char **argv)
++static void virtio_serial_test(void)
+ {
+-    int ret;
+-
+-    g_test_init(&argc, &argv, NULL);
+-    qtest_add_func("/virtio/serial/nop", virtio_serial_nop);
+-    qtest_add_func("/virtio/serial/hotplug", hotplug);
+-
+-    global_qtest = qtest_startf("-device virtio-serial-%s",
+-                                qvirtio_get_dev_type());
+-    ret = g_test_run();
+-
+-    qtest_end();
+-
+-    return ret;
++    qos_add_test("serial-nop", "virtio-serial", virtio_serial_nop, NULL);
++    qos_add_test("serial-hotplug", "virtio-serial", serial_hotplug, NULL);
+ }
++
++libqos_init(virtio_serial_test);
+-- 
+2.17.1
+

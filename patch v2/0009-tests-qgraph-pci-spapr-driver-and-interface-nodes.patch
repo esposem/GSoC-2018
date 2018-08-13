@@ -1,0 +1,167 @@
+From a23054b258ac32bdebc983fee15f619a6a1a7db6 Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Tue, 10 Jul 2018 16:09:26 +0200
+Subject: [PATCH v2 09/34] tests/qgraph: pci-spapr driver and interface nodes
+
+Add pci-bus-spapr node, that produces pci-bus. Move QPCIBusSPAPR struct
+declaration in its header (since it will be needed by other drivers)
+and introduce a setter method for drivers that do not need to allocate
+but have to initialize QPCIBusSPAPR.
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/Makefile.include   |  2 +-
+ tests/libqos/pci-spapr.c | 57 ++++++++++++++++++++++++----------------
+ tests/libqos/pci-spapr.h | 24 +++++++++++++++++
+ 3 files changed, 59 insertions(+), 24 deletions(-)
+
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index d826a09919..5ce905bd82 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -771,7 +771,7 @@ libqos-virtio-obj-y = $(libqos-spapr-obj-y) $(libqos-pc-obj-y) tests/libqos/virt
+ libqgraph-machines-obj-y = tests/libqos/x86_64_pc-machine.o
+ libqgraph-machines-obj-y += tests/libqos/raspi2-machine.o
+ 
+-libqgraph-pci-obj-y = $(libqos-pc-obj-y)
++libqgraph-pci-obj-y = $(libqos-pc-obj-y) $(libqos-spapr-obj-y)
+ libqgraph-pci-obj-y += $(libqgraph-machines-obj-y)
+ libqgraph-pci-obj-y += tests/libqos/sdhci.o
+ 
+diff --git a/tests/libqos/pci-spapr.c b/tests/libqos/pci-spapr.c
+index 30b6d5b5a7..108db6c9b6 100644
+--- a/tests/libqos/pci-spapr.c
++++ b/tests/libqos/pci-spapr.c
+@@ -9,33 +9,13 @@
+ #include "libqtest.h"
+ #include "libqos/pci-spapr.h"
+ #include "libqos/rtas.h"
++#include "libqos/qgraph.h"
+ 
+ #include "hw/pci/pci_regs.h"
+ 
+ #include "qemu-common.h"
+ #include "qemu/host-utils.h"
+ 
+-
+-/* From include/hw/pci-host/spapr.h */
+-
+-typedef struct QPCIWindow {
+-    uint64_t pci_base;    /* window address in PCI space */
+-    uint64_t size;        /* window size */
+-} QPCIWindow;
+-
+-typedef struct QPCIBusSPAPR {
+-    QPCIBus bus;
+-    QGuestAllocator *alloc;
+-
+-    uint64_t buid;
+-
+-    uint64_t pio_cpu_base;
+-    QPCIWindow pio;
+-
+-    uint64_t mmio32_cpu_base;
+-    QPCIWindow mmio32;
+-} QPCIBusSPAPR;
+-
+ /*
+  * PCI devices are always little-endian
+  * SPAPR by default is big-endian
+@@ -160,12 +140,23 @@ static void qpci_spapr_config_writel(QPCIBus *bus, int devfn, uint8_t offset,
+ #define SPAPR_PCI_MMIO32_WIN_SIZE    0x80000000 /* 2 GiB */
+ #define SPAPR_PCI_IO_WIN_SIZE        0x10000
+ 
+-QPCIBus *qpci_spapr_new(QTestState *qts, QGuestAllocator *alloc)
++static void *qspapr_get_driver(void *obj, const char *interface)
+ {
+-    QPCIBusSPAPR *ret = g_new0(QPCIBusSPAPR, 1);
++    QPCIBusSPAPR *qpci = obj;
++    if (!g_strcmp0(interface, "pci-bus")) {
++        return &qpci->bus;
++    }
++    printf("%s not present in pci-bus-spapr", interface);
++    abort();
++}
+ 
++void qpci_init_spapr(QPCIBusSPAPR *ret, QTestState *qts, QGuestAllocator *alloc)
++{
+     assert(qts);
+ 
++    /* tests cannot use spapr, needs to be fixed first */
++    ret->bus.has_buggy_msi = TRUE;
++
+     ret->alloc = alloc;
+ 
+     ret->bus.pio_readb = qpci_spapr_pio_readb;
+@@ -208,12 +199,32 @@ QPCIBus *qpci_spapr_new(QTestState *qts, QGuestAllocator *alloc)
+     ret->bus.mmio_alloc_ptr = ret->mmio32.pci_base;
+     ret->bus.mmio_limit = ret->mmio32.pci_base + ret->mmio32.size;
+ 
++    ret->obj.get_driver = qspapr_get_driver;
++}
++
++QPCIBus *qpci_spapr_new(QTestState *qts, QGuestAllocator *alloc)
++{
++    QPCIBusSPAPR *ret = g_new0(QPCIBusSPAPR, 1);
++    qpci_init_spapr(ret, qts, alloc);
++
+     return &ret->bus;
+ }
+ 
+ void qpci_free_spapr(QPCIBus *bus)
+ {
++    if (!bus) {
++        return;
++    }
++
+     QPCIBusSPAPR *s = container_of(bus, QPCIBusSPAPR, bus);
+ 
+     g_free(s);
+ }
++
++static void qpci_spapr(void)
++{
++    qos_node_create_driver("pci-bus-spapr", NULL);
++    qos_node_produces("pci-bus-spapr", "pci-bus");
++}
++
++libqos_init(qpci_spapr);
+diff --git a/tests/libqos/pci-spapr.h b/tests/libqos/pci-spapr.h
+index d5305d16f8..74cd183c9a 100644
+--- a/tests/libqos/pci-spapr.h
++++ b/tests/libqos/pci-spapr.h
+@@ -10,7 +10,31 @@
+ 
+ #include "libqos/malloc.h"
+ #include "libqos/pci.h"
++#include "libqos/qgraph.h"
+ 
++/* From include/hw/pci-host/spapr.h */
++
++typedef struct QPCIWindow {
++    uint64_t pci_base;    /* window address in PCI space */
++    uint64_t size;        /* window size */
++} QPCIWindow;
++
++typedef struct QPCIBusSPAPR {
++    QOSGraphObject obj;
++    QPCIBus bus;
++    QGuestAllocator *alloc;
++
++    uint64_t buid;
++
++    uint64_t pio_cpu_base;
++    QPCIWindow pio;
++
++    uint64_t mmio32_cpu_base;
++    QPCIWindow mmio32;
++} QPCIBusSPAPR;
++
++void qpci_init_spapr(QPCIBusSPAPR *ret, QTestState *qts,
++                     QGuestAllocator *alloc);
+ QPCIBus *qpci_spapr_new(QTestState *qts, QGuestAllocator *alloc);
+ void     qpci_free_spapr(QPCIBus *bus);
+ 
+-- 
+2.17.1
+

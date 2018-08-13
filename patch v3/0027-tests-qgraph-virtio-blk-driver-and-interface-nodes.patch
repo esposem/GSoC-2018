@@ -1,0 +1,213 @@
+From 3d5d941b4ce099084c434fc6b77638eac3a76065 Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Thu, 26 Jul 2018 11:25:02 +0200
+Subject: [PATCH 27/33] tests/qgraph: virtio-blk driver and interface nodes
+
+Add qgraph nodes for virtio-blk-pci and virtio-blk-device.
+Both nodes produce virtio-blk, but virtio-blk-pci receives
+a pci-bus and uses virtio-pci QOSGraphObject and functions,
+while virtio-blk-device receives a virtio and implements
+its own functions
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/Makefile.include    |   1 +
+ tests/libqos/virtio-blk.c | 126 ++++++++++++++++++++++++++++++++++++++
+ tests/libqos/virtio-blk.h |  40 ++++++++++++
+ 3 files changed, 167 insertions(+)
+ create mode 100644 tests/libqos/virtio-blk.c
+ create mode 100644 tests/libqos/virtio-blk.h
+
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index cc1e1396f1..340c2462d2 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -769,6 +769,7 @@ libqgraph-virtio-obj-y = tests/libqos/virtio-serial.o
+ libqgraph-virtio-obj-y += tests/libqos/virtio-9p.o
+ libqgraph-virtio-obj-y += tests/libqos/virtio-balloon.o
+ libqgraph-virtio-obj-y += tests/libqos/virtio-rng.o
++libqgraph-virtio-obj-y += tests/libqos/virtio-blk.o
+ 
+ libqgraph-pci-obj-y = $(libqos-virtio-obj-y)
+ libqgraph-pci-obj-y += $(libqgraph-machines-obj-y)
+diff --git a/tests/libqos/virtio-blk.c b/tests/libqos/virtio-blk.c
+new file mode 100644
+index 0000000000..a9dcee376c
+--- /dev/null
++++ b/tests/libqos/virtio-blk.c
+@@ -0,0 +1,126 @@
++/*
++ * libqos driver framework
++ *
++ * Copyright (c) 2018 Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License version 2 as published by the Free Software Foundation.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, see <http://www.gnu.org/licenses/>
++ */
++
++#include "qemu/osdep.h"
++#include "libqtest.h"
++#include "standard-headers/linux/virtio_blk.h"
++#include "libqos/qgraph.h"
++#include "libqos/virtio-blk.h"
++
++#define PCI_SLOT                0x04
++#define PCI_FN                  0x00
++
++/* virtio-blk-device */
++static void qvirtio_blk_device_destructor(QOSGraphObject *obj)
++{
++    QVirtioBlkDevice *v_blk = (QVirtioBlkDevice *) obj;
++    g_free(v_blk);
++}
++
++static void *qvirtio_blk_device_get_driver(void *object,
++                                           const char *interface)
++{
++    QVirtioBlkDevice *v_blk = object;
++    if (!g_strcmp0(interface, "virtio-blk")) {
++        return &v_blk->blk;
++    }
++
++    fprintf(stderr, "%s not present in virtio-blk-device\n", interface);
++    g_assert_not_reached();
++}
++
++static void *virtio_blk_device_create(void *virtio_dev,
++                                      QGuestAllocator *t_alloc,
++                                      void *addr)
++{
++    QVirtioBlkDevice *virtio_blk = g_new0(QVirtioBlkDevice, 1);
++    QVirtioBlk *interface = &virtio_blk->blk;
++
++    interface->vdev = virtio_dev;
++
++    virtio_blk->obj.destructor = qvirtio_blk_device_destructor;
++    virtio_blk->obj.get_driver = qvirtio_blk_device_get_driver;
++
++    return &virtio_blk->obj;
++}
++
++/* virtio-blk-pci */
++static void *qvirtio_blk_pci_get_driver(void *object, const char *interface)
++{
++    QVirtioBlkPCI *v_blk = object;
++    if (!g_strcmp0(interface, "virtio-blk")) {
++        return &v_blk->blk;
++    }
++
++    /* implicit contains */
++    if (!g_strcmp0(interface, "pci-device")) {
++        return v_blk->pci_vdev.pdev;
++    }
++
++    fprintf(stderr, "%s not present in virtio-blk-pci\n", interface);
++    g_assert_not_reached();
++}
++
++static void *virtio_blk_pci_create(void *pci_bus, QGuestAllocator *t_alloc,
++                                      void *addr)
++{
++    QVirtioBlkPCI *virtio_blk = g_new0(QVirtioBlkPCI, 1);
++    QVirtioBlk *interface = &virtio_blk->blk;
++    QOSGraphObject *obj = &virtio_blk->pci_vdev.obj;
++
++    virtio_pci_init(&virtio_blk->pci_vdev, pci_bus, addr);
++    interface->vdev = &virtio_blk->pci_vdev.vdev;
++
++    g_assert_cmphex(interface->vdev->device_type, ==, VIRTIO_ID_BLOCK);
++
++    obj->get_driver = qvirtio_blk_pci_get_driver;
++
++    return obj;
++}
++
++static void virtio_blk_register_nodes(void)
++{
++    /* FIXME: every test using these two nodes needs to setup a
++     * -drive,id=drive0 otherwise QEMU is not going to start */
++
++    char *arg = g_strdup_printf("id=drv0,drive=drive0,addr=%x.%x",
++                                PCI_SLOT, PCI_FN);
++
++    QPCIAddress addr = {
++        .devfn = QPCI_DEVFN(PCI_SLOT, PCI_FN),
++    };
++
++    QOSGraphEdgeOptions opts = { };
++
++    /* virtio-blk-device */
++    opts.extra_device_opts = "drive=drive0";
++    qos_node_create_driver("virtio-blk-device", virtio_blk_device_create);
++    qos_node_consumes("virtio-blk-device", "virtio", &opts);
++    qos_node_produces("virtio-blk-device", "virtio-blk");
++
++    /* virtio-blk-pci */
++    opts.extra_device_opts = arg;
++    add_qpci_address(&opts, &addr);
++    qos_node_create_driver("virtio-blk-pci", virtio_blk_pci_create);
++    qos_node_consumes("virtio-blk-pci", "pci-bus", &opts);
++    qos_node_produces("virtio-blk-pci", "virtio-blk");
++
++    g_free(arg);
++}
++
++libqos_init(virtio_blk_register_nodes);
+diff --git a/tests/libqos/virtio-blk.h b/tests/libqos/virtio-blk.h
+new file mode 100644
+index 0000000000..dc258496ba
+--- /dev/null
++++ b/tests/libqos/virtio-blk.h
+@@ -0,0 +1,40 @@
++/*
++ * libqos driver framework
++ *
++ * Copyright (c) 2018 Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License version 2 as published by the Free Software Foundation.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, see <http://www.gnu.org/licenses/>
++ */
++
++#include "libqos/qgraph.h"
++#include "libqos/virtio.h"
++#include "libqos/virtio-pci.h"
++
++typedef struct QVirtioBlk QVirtioBlk;
++typedef struct QVirtioBlkPCI QVirtioBlkPCI;
++typedef struct QVirtioBlkDevice QVirtioBlkDevice;
++
++/* virtqueue is created in each test */
++struct QVirtioBlk {
++    QVirtioDevice *vdev;
++};
++
++struct QVirtioBlkPCI {
++    QVirtioPCIDevice pci_vdev;
++    QVirtioBlk blk;
++};
++
++struct QVirtioBlkDevice {
++    QOSGraphObject obj;
++    QVirtioBlk blk;
++};
+-- 
+2.17.1
+

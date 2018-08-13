@@ -1,0 +1,194 @@
+From b64f3b95f937a9df7d211316a62cb97aa2dd41b5 Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Wed, 25 Jul 2018 23:55:38 +0200
+Subject: [PATCH 25/33] tests/qgraph: virtio-rng driver and interface nodes
+
+Add qgraph nodes for virtio-rng-pci and virtio-rng-device.
+Both nodes produce virtio-rng, but virtio-rng-pci receives
+a pci-bus and uses virtio-pci QOSGraphObject and functions,
+while virtio-rng-device receives a virtio and implements
+its own functions
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/Makefile.include    |   1 +
+ tests/libqos/virtio-rng.c | 108 ++++++++++++++++++++++++++++++++++++++
+ tests/libqos/virtio-rng.h |  39 ++++++++++++++
+ 3 files changed, 148 insertions(+)
+ create mode 100644 tests/libqos/virtio-rng.c
+ create mode 100644 tests/libqos/virtio-rng.h
+
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index b23597972d..162187d15b 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -769,6 +769,7 @@ libqgraph-machines-obj-y += tests/libqos/virt-machine.o
+ libqgraph-virtio-obj-y = tests/libqos/virtio-serial.o
+ libqgraph-virtio-obj-y += tests/libqos/virtio-9p.o
+ libqgraph-virtio-obj-y += tests/libqos/virtio-balloon.o
++libqgraph-virtio-obj-y += tests/libqos/virtio-rng.o
+ 
+ libqgraph-pci-obj-y = $(libqos-virtio-obj-y)
+ libqgraph-pci-obj-y += $(libqgraph-machines-obj-y)
+diff --git a/tests/libqos/virtio-rng.c b/tests/libqos/virtio-rng.c
+new file mode 100644
+index 0000000000..508af62c8d
+--- /dev/null
++++ b/tests/libqos/virtio-rng.c
+@@ -0,0 +1,108 @@
++/*
++ * libqos driver framework
++ *
++ * Copyright (c) 2018 Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License version 2 as published by the Free Software Foundation.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, see <http://www.gnu.org/licenses/>
++ */
++
++#include "qemu/osdep.h"
++#include "libqtest.h"
++#include "libqos/qgraph.h"
++#include "libqos/virtio-rng.h"
++
++/* virtio-rng-device */
++static void qvirtio_rng_device_destructor(QOSGraphObject *obj)
++{
++    QVirtioRngDevice *v_rng = (QVirtioRngDevice *) obj;
++
++    g_free(v_rng);
++}
++
++static void *qvirtio_rng_device_get_driver(void *object,
++                                              const char *interface)
++{
++    QVirtioRngDevice *v_rng = object;
++    if (!g_strcmp0(interface, "virtio-rng")) {
++        return &v_rng->rng;
++    }
++
++    fprintf(stderr, "%s not present in virtio-rng-device\n", interface);
++    g_assert_not_reached();
++}
++
++static void *virtio_rng_device_create(void *virtio_dev,
++                                      QGuestAllocator *t_alloc,
++                                      void *addr)
++{
++    QVirtioRngDevice *virtio_rdevice = g_new0(QVirtioRngDevice, 1);
++    QVirtioRng *interface = &virtio_rdevice->rng;
++
++    interface->vdev = virtio_dev;
++
++    virtio_rdevice->obj.destructor = qvirtio_rng_device_destructor;
++    virtio_rdevice->obj.get_driver = qvirtio_rng_device_get_driver;
++
++    return &virtio_rdevice->obj;
++}
++
++/* virtio-rng-pci */
++static void *qvirtio_rng_pci_get_driver(void *object, const char *interface)
++{
++    QVirtioRngPCI *v_rng = object;
++    if (!g_strcmp0(interface, "virtio-rng")) {
++        return &v_rng->rng;
++    }
++
++    fprintf(stderr, "%s not present in virtio-rng-pci\n", interface);
++    g_assert_not_reached();
++}
++
++static void *virtio_rng_pci_create(void *pci_bus, QGuestAllocator *t_alloc,
++                                   void *addr)
++{
++    QVirtioRngPCI *virtio_rpci = g_new0(QVirtioRngPCI, 1);
++    QVirtioRng *interface = &virtio_rpci->rng;
++    QOSGraphObject *obj = &virtio_rpci->pci_vdev.obj;
++
++    virtio_pci_init(&virtio_rpci->pci_vdev, pci_bus, addr);
++    interface->vdev = &virtio_rpci->pci_vdev.vdev;
++
++    obj->get_driver = qvirtio_rng_pci_get_driver;
++
++    return obj;
++}
++
++static void virtio_rng_register_nodes(void)
++{
++    QPCIAddress addr = {
++        .devfn = QPCI_DEVFN(4, 0),
++    };
++
++    QOSGraphEdgeOptions opts = {
++        .extra_device_opts = "addr=04.0",
++    };
++
++    /* virtio-rng-device */
++    qos_node_create_driver("virtio-rng-device", virtio_rng_device_create);
++    qos_node_consumes("virtio-rng-device", "virtio", NULL);
++    qos_node_produces("virtio-rng-device", "virtio-rng");
++
++    /* virtio-rng-pci */
++    add_qpci_address(&opts, &addr);
++    qos_node_create_driver("virtio-rng-pci", virtio_rng_pci_create);
++    qos_node_consumes("virtio-rng-pci", "pci-bus", &opts);
++    qos_node_produces("virtio-rng-pci", "virtio-rng");
++}
++
++libqos_init(virtio_rng_register_nodes);
+diff --git a/tests/libqos/virtio-rng.h b/tests/libqos/virtio-rng.h
+new file mode 100644
+index 0000000000..fbba988875
+--- /dev/null
++++ b/tests/libqos/virtio-rng.h
+@@ -0,0 +1,39 @@
++/*
++ * libqos driver framework
++ *
++ * Copyright (c) 2018 Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License version 2 as published by the Free Software Foundation.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, see <http://www.gnu.org/licenses/>
++ */
++
++#include "libqos/qgraph.h"
++#include "libqos/virtio.h"
++#include "libqos/virtio-pci.h"
++
++typedef struct QVirtioRng QVirtioRng;
++typedef struct QVirtioRngPCI QVirtioRngPCI;
++typedef struct QVirtioRngDevice QVirtioRngDevice;
++
++struct QVirtioRng {
++    QVirtioDevice *vdev;
++};
++
++struct QVirtioRngPCI {
++    QVirtioPCIDevice pci_vdev;
++    QVirtioRng rng;
++};
++
++struct QVirtioRngDevice {
++    QOSGraphObject obj;
++    QVirtioRng rng;
++};
+-- 
+2.17.1
+

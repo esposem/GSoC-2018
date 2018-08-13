@@ -1,0 +1,87 @@
+From 54a1f722221db0f616ff67d5dd592eadf759625a Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Thu, 9 Aug 2018 12:44:56 +0200
+Subject: [PATCH 10/33] tests/qgraph: has_buggy_msi flag
+
+The Qgraph framework makes any test using
+pci bus run the same function using pci-pci and
+pci-spapr bus. However, some tests are not ready to use
+the spapr bus, due to a MSI bug. Until it does not get
+fixed, this flag allows them to skip the test
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/libqos/pci-pc.c    | 3 +++
+ tests/libqos/pci-spapr.c | 3 +++
+ tests/libqos/pci.c       | 5 +++++
+ tests/libqos/pci.h       | 3 +++
+ 4 files changed, 14 insertions(+)
+
+diff --git a/tests/libqos/pci-pc.c b/tests/libqos/pci-pc.c
+index 93cbfbce6b..0cf87f51b5 100644
+--- a/tests/libqos/pci-pc.c
++++ b/tests/libqos/pci-pc.c
+@@ -123,6 +123,9 @@ void qpci_init_pc(QPCIBusPC *qpci, QTestState *qts, QGuestAllocator *alloc)
+ {
+     assert(qts);
+ 
++    /* tests can use pci-bus */
++    qpci->bus.has_buggy_msi = FALSE;
++
+     qpci->bus.pio_readb = qpci_pc_pio_readb;
+     qpci->bus.pio_readw = qpci_pc_pio_readw;
+     qpci->bus.pio_readl = qpci_pc_pio_readl;
+diff --git a/tests/libqos/pci-spapr.c b/tests/libqos/pci-spapr.c
+index 24f2c2c60d..502a0e5129 100644
+--- a/tests/libqos/pci-spapr.c
++++ b/tests/libqos/pci-spapr.c
+@@ -155,6 +155,9 @@ void qpci_init_spapr(QPCIBusSPAPR *qpci, QTestState *qts,
+ {
+     assert(qts);
+ 
++    /* tests cannot use spapr, needs to be fixed first */
++    qpci->bus.has_buggy_msi = TRUE;
++
+     qpci->alloc = alloc;
+ 
+     qpci->bus.pio_readb = qpci_spapr_pio_readb;
+diff --git a/tests/libqos/pci.c b/tests/libqos/pci.c
+index 080e87533e..d5bace9d6a 100644
+--- a/tests/libqos/pci.c
++++ b/tests/libqos/pci.c
+@@ -51,6 +51,11 @@ void qpci_device_foreach(QPCIBus *bus, int vendor_id, int device_id,
+     }
+ }
+ 
++bool qpci_has_buggy_msi(QPCIDevice *dev)
++{
++    return dev->bus->has_buggy_msi;
++}
++
+ static void qpci_device_set(QPCIDevice *dev, QPCIBus *bus, int devfn)
+ {
+     g_assert(dev);
+diff --git a/tests/libqos/pci.h b/tests/libqos/pci.h
+index bcfa6d85a4..5fb3c550c5 100644
+--- a/tests/libqos/pci.h
++++ b/tests/libqos/pci.h
+@@ -53,6 +53,7 @@ struct QPCIBus {
+     QTestState *qts;
+     uint16_t pio_alloc_ptr;
+     uint64_t mmio_alloc_ptr, mmio_limit;
++    bool has_buggy_msi; /* TRUE for spapr, FALSE for pci */
+ 
+ };
+ 
+@@ -80,6 +81,8 @@ void qpci_device_foreach(QPCIBus *bus, int vendor_id, int device_id,
+                          void *data);
+ QPCIDevice *qpci_device_find(QPCIBus *bus, int devfn);
+ void qpci_device_init(QPCIDevice *dev, QPCIBus *bus, QPCIAddress *addr);
++/* returns the bus has_buggy_msi flag */
++bool qpci_has_buggy_msi(QPCIDevice *dev);
+ 
+ void qpci_device_enable(QPCIDevice *dev);
+ uint8_t qpci_find_capability(QPCIDevice *dev, uint8_t id);
+-- 
+2.17.1
+

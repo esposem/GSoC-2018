@@ -1,0 +1,57 @@
+From 802a950695d51014eefc172463cf26f74272bc8d Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Thu, 19 Jul 2018 15:14:44 +0200
+Subject: [PATCH v2 15/34] tests/qgraph: rename qvirtio_mmio_init_device
+ functions
+
+Rename qvirtio_mmio_init_device in qvirtio_mmio_device_new, since the function
+actually allocates a new QVirtioMMIODevice and initialize it.
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/libqos/virtio-mmio.c | 2 +-
+ tests/libqos/virtio-mmio.h | 2 +-
+ tests/virtio-blk-test.c    | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/tests/libqos/virtio-mmio.c b/tests/libqos/virtio-mmio.c
+index 7aa8383338..6f4c1b0955 100644
+--- a/tests/libqos/virtio-mmio.c
++++ b/tests/libqos/virtio-mmio.c
+@@ -187,7 +187,7 @@ const QVirtioBus qvirtio_mmio = {
+     .virtqueue_kick = qvirtio_mmio_virtqueue_kick,
+ };
+ 
+-QVirtioMMIODevice *qvirtio_mmio_init_device(uint64_t addr, uint32_t page_size)
++QVirtioMMIODevice *qvirtio_mmio_device_new(uint64_t addr, uint32_t page_size)
+ {
+     QVirtioMMIODevice *dev;
+     uint32_t magic;
+diff --git a/tests/libqos/virtio-mmio.h b/tests/libqos/virtio-mmio.h
+index e3e52b9ce1..bcc09895fd 100644
+--- a/tests/libqos/virtio-mmio.h
++++ b/tests/libqos/virtio-mmio.h
+@@ -41,6 +41,6 @@ typedef struct QVirtioMMIODevice {
+ 
+ extern const QVirtioBus qvirtio_mmio;
+ 
+-QVirtioMMIODevice *qvirtio_mmio_init_device(uint64_t addr, uint32_t page_size);
++QVirtioMMIODevice *qvirtio_mmio_device_new(uint64_t addr, uint32_t page_size);
+ 
+ #endif
+diff --git a/tests/virtio-blk-test.c b/tests/virtio-blk-test.c
+index 3e8f98e528..267cf28376 100644
+--- a/tests/virtio-blk-test.c
++++ b/tests/virtio-blk-test.c
+@@ -699,7 +699,7 @@ static void mmio_basic(void)
+ 
+     arm_test_start();
+ 
+-    dev = qvirtio_mmio_init_device(MMIO_DEV_BASE_ADDR, MMIO_PAGE_SIZE);
++    dev = qvirtio_mmio_device_new(MMIO_DEV_BASE_ADDR, MMIO_PAGE_SIZE);
+     g_assert(dev != NULL);
+     g_assert_cmphex(dev->vdev.device_type, ==, VIRTIO_ID_BLOCK);
+ 
+-- 
+2.17.1
+

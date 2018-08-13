@@ -1,0 +1,85 @@
+From fb48df5660eb714e80564a06fa8c9c71b7e3f98b Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Mon, 9 Jul 2018 10:58:12 +0200
+Subject: [PATCH 0/7] Qtest driver framework
+
+qgraph API for the qtest driver framework
+
+This series of patches introduce a different qtest driver 
+organization, viewing machines, drivers and tests as node in a 
+graph, each having one or multiple edges relations.
+
+The idea is to have a framework where each test asks for a specific
+driver, and the framework takes care of allocating the proper devices
+required and passing the correct command line arguments to QEMU.
+
+A node can be of four types:
+- MACHINE:   for example "arm/raspi2"
+- DRIVER:    for example "generic-sdhci"
+- INTERFACE: for example "sdhci" (interface for all "-sdhci" drivers)
+- TEST:      for example "sdhci-test", consumes an interface and tests
+             the functions provided
+
+An edge relation between two nodes (drivers or machines) X and Y can be:
+- X CONSUMES Y: Y can be plugged into X
+- X PRODUCES Y: X provides the interface Y
+- X CONTAINS Y: Y is part of X component
+
+Basic framework steps are the following:
+- All nodes and edges are created in their respective machine/driver/test files
+- The framework starts QEMU and asks for a list of available devices
+  and machines
+- The framework walks the graph starting from the available machines and
+  performs a Depth First Search for tests
+- Once a test is found, the path is walked again and all drivers are
+  allocated accordingly and the final interface is passed to the test
+- The test is executed
+- Unused objects are cleaned and the path discovery is continued
+
+Depending on the QEMU binary used, only some drivers/machines will be available
+and only test that are reached by them will be executed.
+
+This work is being done as Google Summer of Code 2018 project for QEMU,
+my mentors are Paolo Bonzini and Laurent Vivier.
+Additional infos on the project can be found at:
+https://wiki.qemu.org/Features/qtest_driver_framework
+
+Emanuele Giuseppe Esposito (7):
+  tests: qgraph API for the qtest driver framework
+  tests/qgraph: pci-pc driver and interface nodes
+  tests/qgraph: sdhci driver and interface nodes
+  tests/qgraph: arm/raspi2 machine node
+  tests/qgraph: x86_64/pc machine node
+  tests/qgraph: gtest integration
+  tests/qgraph: sdhci test node
+
+ configure                        |   2 +-
+ include/qemu/module.h            |   2 +
+ tests/Makefile.include           |  16 +-
+ tests/libqos/pci-pc.c            |  53 ++-
+ tests/libqos/pci-pc.h            |   8 +
+ tests/libqos/pci.c               |   8 +
+ tests/libqos/qgraph.c            | 676 +++++++++++++++++++++++++++++++
+ tests/libqos/qgraph.h            | 259 ++++++++++++
+ tests/libqos/qgraph_extra.h      | 155 +++++++
+ tests/libqos/raspi2-machine.c    |  68 ++++
+ tests/libqos/sdhci.c             | 142 +++++++
+ tests/libqos/sdhci.h             |  68 ++++
+ tests/libqos/x86_64_pc-machine.c |  93 +++++
+ tests/qos-test.c                 | 310 ++++++++++++++
+ tests/sdhci-test.c               | 222 +++-------
+ tests/test-qgraph.c              | 446 ++++++++++++++++++++
+ 16 files changed, 2357 insertions(+), 171 deletions(-)
+ create mode 100644 tests/libqos/qgraph.c
+ create mode 100644 tests/libqos/qgraph.h
+ create mode 100644 tests/libqos/qgraph_extra.h
+ create mode 100644 tests/libqos/raspi2-machine.c
+ create mode 100644 tests/libqos/sdhci.c
+ create mode 100644 tests/libqos/sdhci.h
+ create mode 100644 tests/libqos/x86_64_pc-machine.c
+ create mode 100644 tests/qos-test.c
+ create mode 100644 tests/test-qgraph.c
+
+-- 
+2.17.1
+

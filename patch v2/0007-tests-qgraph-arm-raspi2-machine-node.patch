@@ -1,0 +1,118 @@
+From c747f0c15c53e6156681379928b8ba5bbd7c941d Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Tue, 3 Jul 2018 16:52:20 +0200
+Subject: [PATCH v2 07/34] tests/qgraph: arm/raspi2 machine node
+
+Add arm/raspi2 machine to the graph. This machine contains a generic-sdhci, so
+its constructor must take care of setting it properly when called.
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/Makefile.include        |  1 +
+ tests/libqos/raspi2-machine.c | 82 +++++++++++++++++++++++++++++++++++
+ 2 files changed, 83 insertions(+)
+ create mode 100644 tests/libqos/raspi2-machine.c
+
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index fec6cf35bb..d826a09919 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -769,6 +769,7 @@ libqos-usb-obj-y = $(libqos-spapr-obj-y) $(libqos-pc-obj-y) tests/libqos/usb.o
+ libqos-virtio-obj-y = $(libqos-spapr-obj-y) $(libqos-pc-obj-y) tests/libqos/virtio.o tests/libqos/virtio-pci.o tests/libqos/virtio-mmio.o tests/libqos/malloc-generic.o
+ 
+ libqgraph-machines-obj-y = tests/libqos/x86_64_pc-machine.o
++libqgraph-machines-obj-y += tests/libqos/raspi2-machine.o
+ 
+ libqgraph-pci-obj-y = $(libqos-pc-obj-y)
+ libqgraph-pci-obj-y += $(libqgraph-machines-obj-y)
+diff --git a/tests/libqos/raspi2-machine.c b/tests/libqos/raspi2-machine.c
+new file mode 100644
+index 0000000000..0082315339
+--- /dev/null
++++ b/tests/libqos/raspi2-machine.c
+@@ -0,0 +1,82 @@
++/*
++ * libqos driver framework
++ *
++ * Copyright (c) 2018 Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License version 2 as published by the Free Software Foundation.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, see <http://www.gnu.org/licenses/>
++ */
++
++#include "qemu/osdep.h"
++#include "libqtest.h"
++#include "libqos/malloc.h"
++#include "libqos/qgraph.h"
++#include "sdhci.h"
++
++typedef struct QRaspi2Machine QRaspi2Machine;
++
++struct QRaspi2Machine {
++    QOSGraphObject obj;
++    QGuestAllocator *alloc;
++    QSDHCI_MemoryMapped sdhci;
++};
++
++static void raspi2_destroy(QOSGraphObject *obj)
++{
++    g_free(obj);
++}
++
++static void *raspi2_get_driver(void *object, const char *interface)
++{
++    QRaspi2Machine *machine = object;
++    if (!g_strcmp0(interface, "guest_allocator")) {
++        return &machine->alloc;
++    }
++
++    printf("%s not present in arm/raspi2\n", interface);
++    abort();
++}
++
++static QOSGraphObject *raspi2_get_device(void *obj, const char *device)
++{
++    QRaspi2Machine *machine = obj;
++    if (!g_strcmp0(device, "generic-sdhci")) {
++        return &machine->sdhci.obj;
++    }
++
++    printf("%s not present in arm/raspi2\n", device);
++    abort();
++}
++
++static void *qos_create_machine_arm_raspi2(void)
++{
++    QRaspi2Machine *machine = g_new0(QRaspi2Machine, 1);
++
++    machine->obj.get_device = raspi2_get_device;
++    machine->obj.get_driver = raspi2_get_driver;
++    machine->obj.destructor = raspi2_destroy;
++    qos_init_sdhci_mm(&machine->sdhci, 0x3f300000, &(QSDHCIProperties) {
++        .version = 3,
++        .baseclock = 52,
++        .capab.sdma = false,
++        .capab.reg = 0x052134b4
++    });
++    return &machine->obj;
++}
++
++static void raspi2(void)
++{
++    qos_node_create_machine("arm/raspi2", qos_create_machine_arm_raspi2);
++    qos_node_contains("arm/raspi2", "generic-sdhci", NULL);
++}
++
++libqos_init(raspi2);
+-- 
+2.17.1
+

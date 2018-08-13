@@ -1,0 +1,199 @@
+From e98b104110f29767ca50213a53c2a06e1d7ca659 Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Tue, 24 Jul 2018 19:40:14 +0200
+Subject: [PATCH 18/33] tests/qgraph: virtio-serial driver and interface nodes
+
+Add qgraph nodes for virtio-serial-pci and virtio-serial-device.
+Both nodes produce virtio-serial, but virtio-serial-pci receives
+a pci-bus and uses virtio-pci QOSGraphObject and functions,
+while virtio-serial-device receives a virtio and implements
+its own functions
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/Makefile.include       |   3 +
+ tests/libqos/virtio-serial.c | 109 +++++++++++++++++++++++++++++++++++
+ tests/libqos/virtio-serial.h |  39 +++++++++++++
+ 3 files changed, 151 insertions(+)
+ create mode 100644 tests/libqos/virtio-serial.c
+ create mode 100644 tests/libqos/virtio-serial.h
+
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index 0e0bebf783..409475eafd 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -770,8 +770,11 @@ libqgraph-machines-obj-y += tests/libqos/raspi2-machine.o
+ libqgraph-machines-obj-y += tests/libqos/ppc64_pseries-machine.o
+ libqgraph-machines-obj-y += tests/libqos/virt-machine.o
+ 
++libqgraph-virtio-obj-y = tests/libqos/virtio-serial.o
++
+ libqgraph-pci-obj-y = $(libqos-virtio-obj-y)
+ libqgraph-pci-obj-y += $(libqgraph-machines-obj-y)
++libqgraph-pci-obj-y += $(libqgraph-virtio-obj-y)
+ libqgraph-pci-obj-y += tests/libqos/sdhci.o
+ libqgraph-pci-obj-y += tests/libqos/e1000e.o
+ 
+diff --git a/tests/libqos/virtio-serial.c b/tests/libqos/virtio-serial.c
+new file mode 100644
+index 0000000000..83e1f90708
+--- /dev/null
++++ b/tests/libqos/virtio-serial.c
+@@ -0,0 +1,109 @@
++/*
++ * libqos driver framework
++ *
++ * Copyright (c) 2018 Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License version 2 as published by the Free Software Foundation.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, see <http://www.gnu.org/licenses/>
++ */
++
++#include "qemu/osdep.h"
++#include "libqtest.h"
++#include "libqos/qgraph.h"
++#include "libqos/virtio-serial.h"
++
++/* virtio-serial-device */
++static void qvirtio_serial_device_destructor(QOSGraphObject *obj)
++{
++    QVirtioSerialDevice *v_serial = (QVirtioSerialDevice *) obj;
++
++    g_free(v_serial);
++}
++
++static void *qvirtio_serial_device_get_driver(void *object,
++                                              const char *interface)
++{
++    QVirtioSerialDevice *v_serial = object;
++    if (!g_strcmp0(interface, "virtio-serial")) {
++        return &v_serial->serial;
++    }
++
++    fprintf(stderr, "%s not present in virtio-serial-device\n", interface);
++    g_assert_not_reached();
++}
++
++static void *virtio_serial_device_create(void *virtio_dev,
++                                         QGuestAllocator *t_alloc,
++                                         void *addr)
++{
++    QVirtioSerialDevice *virtio_device = g_new0(QVirtioSerialDevice, 1);
++    QVirtioSerial *interface = &virtio_device->serial;
++
++    interface->vdev = virtio_dev;
++
++    virtio_device->obj.destructor = qvirtio_serial_device_destructor;
++    virtio_device->obj.get_driver = qvirtio_serial_device_get_driver;
++
++    return &virtio_device->obj;
++}
++
++/* virtio-serial-pci */
++static void *qvirtio_serial_pci_get_driver(void *object, const char *interface)
++{
++    QVirtioSerialPCI *v_serial = object;
++    if (!g_strcmp0(interface, "virtio-serial")) {
++        return &v_serial->serial;
++    }
++
++    fprintf(stderr, "%s not present in virtio-serial-pci\n", interface);
++    g_assert_not_reached();
++}
++
++static void *virtio_serial_pci_create(void *pci_bus, QGuestAllocator *t_alloc,
++                                      void *addr)
++{
++    QVirtioSerialPCI *virtio_spci = g_new0(QVirtioSerialPCI, 1);
++    QVirtioSerial *interface = &virtio_spci->serial;
++    QOSGraphObject *obj = &virtio_spci->pci_vdev.obj;
++
++    virtio_pci_init(&virtio_spci->pci_vdev, pci_bus, addr);
++    interface->vdev = &virtio_spci->pci_vdev.vdev;
++
++    obj->get_driver = qvirtio_serial_pci_get_driver;
++
++    return obj;
++}
++
++static void virtio_serial_register_nodes(void)
++{
++   QPCIAddress addr = {
++        .devfn = QPCI_DEVFN(4, 0),
++    };
++
++    QOSGraphEdgeOptions edge_opts = { };
++
++    /* virtio-serial-device */
++    edge_opts.extra_device_opts = "id=vser0";
++    qos_node_create_driver("virtio-serial-device",
++                            virtio_serial_device_create);
++    qos_node_consumes("virtio-serial-device", "virtio", &edge_opts);
++    qos_node_produces("virtio-serial-device", "virtio-serial");
++
++    /* virtio-serial-pci */
++    edge_opts.extra_device_opts = "id=vser0,addr=04.0";
++    add_qpci_address(&edge_opts, &addr);
++    qos_node_create_driver("virtio-serial-pci", virtio_serial_pci_create);
++    qos_node_consumes("virtio-serial-pci", "pci-bus", &edge_opts);
++    qos_node_produces("virtio-serial-pci", "virtio-serial");
++}
++
++libqos_init(virtio_serial_register_nodes);
+diff --git a/tests/libqos/virtio-serial.h b/tests/libqos/virtio-serial.h
+new file mode 100644
+index 0000000000..b7e2a5d178
+--- /dev/null
++++ b/tests/libqos/virtio-serial.h
+@@ -0,0 +1,39 @@
++/*
++ * libqos driver framework
++ *
++ * Copyright (c) 2018 Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License version 2 as published by the Free Software Foundation.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, see <http://www.gnu.org/licenses/>
++ */
++
++#include "libqos/qgraph.h"
++#include "libqos/virtio.h"
++#include "libqos/virtio-pci.h"
++
++typedef struct QVirtioSerial QVirtioSerial;
++typedef struct QVirtioSerialPCI QVirtioSerialPCI;
++typedef struct QVirtioSerialDevice QVirtioSerialDevice;
++
++struct QVirtioSerial {
++    QVirtioDevice *vdev;
++};
++
++struct QVirtioSerialPCI {
++    QVirtioPCIDevice pci_vdev;
++    QVirtioSerial serial;
++};
++
++struct QVirtioSerialDevice {
++    QOSGraphObject obj;
++    QVirtioSerial serial;
++};
+-- 
+2.17.1
+

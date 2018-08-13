@@ -1,0 +1,48 @@
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Tue, 26 Jun 2018 16:18:53 +0200
+Subject: [PATCH] vhost-user-test: added proper TestServer *dest initialization in test_migrate()
+
+server->bus in _test_server_free() could be NULL, since TestServer *dest in test_migrate() was not properly initialized like TestServer *s.
+Added init_virtio_dev(dest) and uninit_virtio_dev(dest), so the fields are properly set and when test_server_free(dest); is called, they can be correctly freed.
+
+The reason for that is init_virtio_dev() calls qpci_init_pc(), that creates a QPCIBusPC * (returned as QPCIBus *), while test_server_free() calls qpci_free_pc(),
+that frees the QPCIBus *. Not calling init_virtio_dev() would leave the QPCIBus * of TestServer unset.
+
+Problem came out once I modified  pci-pc.c and pci-pc.h, modifying QPCIBusPC by adding another field before QPCIBus bus. Re-running the tests showed vhost-user-test failing.
+
+Signed-off-by: Emanuele Giuseppe Esposito <esposem@usi.ch>
+---
+ tests/vhost-user-test.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/tests/vhost-user-test.c b/tests/vhost-user-test.c
+index bbc8091..4d71d5e 100644
+--- a/tests/vhost-user-test.c
++++ b/tests/vhost-user-test.c
+@@ -545,6 +545,7 @@ static gboolean _test_server_free(TestServer *server)
+     g_free(server->mig_path);
+ 
+     g_free(server->chr_name);
++    g_assert(server->bus);
+     qpci_free_pc(server->bus);
+ 
+     g_free(server);
+@@ -706,6 +707,7 @@ static void test_migrate(void)
+     g_free(cmd);
+ 
+     init_virtio_dev(s, 1u << VIRTIO_NET_F_MAC);
++    init_virtio_dev(dest, 1u << VIRTIO_NET_F_MAC);
+     wait_for_fds(s);
+     size = get_log_size(s);
+     g_assert_cmpint(size, ==, (2 * 1024 * 1024) / (VHOST_LOG_PAGE * 8));
+@@ -761,6 +763,7 @@ static void test_migrate(void)
+     read_guest_mem_server(dest);
+ 
+     uninit_virtio_dev(s);
++    uninit_virtio_dev(dest);
+ 
+     g_source_destroy(source);
+     g_source_unref(source);
+-- 
+2.7.4
+

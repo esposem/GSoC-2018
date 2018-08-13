@@ -1,0 +1,51 @@
+From ff6d18ce6f9ab37d0af073e7b86f0eb18305332a Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Sat, 21 Jul 2018 00:30:03 +0200
+Subject: [PATCH] pci-pc: add NULL check for qpci_free_pc
+
+The current layout of struct QPCIBusPC provides only one field,
+QPCIBus bus, so passing a NULL pointer to qpci_free_pc()
+makes container_of(NULL, QPCIBusPC, bus)
+returning 0 (NULL), that is correctly handled by g_free().
+This is bad practice, allowing the caller to think that it's okay
+to always pass NULL to the function, even though this is just a
+particular case.
+In facts, qpci_free_pc() happens to return NULL only because container_of
+computes the subtraction between the given NULL
+pointer and offsetof(QPCIBus, bus), with the latter returning 0 too,
+since bus is the first element of the struct and there is no
+offset betwen itself and QPCIBusPC.
+
+However, if in future the bus field changes its position, for example becoming
+the second field, offsetof will return a number > 0, since there is some offset
+between the beginning of the struct and the bus field.
+Therefore passing a NULL pointer to the container_of macro will return a
+negative number, that will be translated into an invalid address passed to
+g_free() and causing a seg fault.
+
+Adding a preventive safety check that returns from the function if the
+given pointer is NULL solves the problem.
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/libqos/pci-pc.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/tests/libqos/pci-pc.c b/tests/libqos/pci-pc.c
+index a7803308b7..bb062bee5a 100644
+--- a/tests/libqos/pci-pc.c
++++ b/tests/libqos/pci-pc.c
+@@ -152,6 +152,10 @@ QPCIBus *qpci_init_pc(QTestState *qts, QGuestAllocator *alloc)
+ 
+ void qpci_free_pc(QPCIBus *bus)
+ {
++    if (!bus) {
++        return;
++    }
++
+     QPCIBusPC *s = container_of(bus, QPCIBusPC, bus);
+ 
+     g_free(s);
+-- 
+2.17.1
+

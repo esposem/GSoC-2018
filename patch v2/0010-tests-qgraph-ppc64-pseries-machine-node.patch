@@ -1,0 +1,148 @@
+From fb1a55a6115ab86ec28c163c3c3ea6f1257a0323 Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Tue, 10 Jul 2018 15:38:43 +0200
+Subject: [PATCH v2 10/34] tests/qgraph: ppc64/pseries machine node
+
+Add pseries  machine for the ppc64 QEMU binary. This machine contains a
+spapr-pci-host-bridge driver, that contains itself a pci-bus-spapr
+that produces the pci-bus interface.
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/Makefile.include               |   1 +
+ tests/libqos/ppc64_pseries-machine.c | 111 +++++++++++++++++++++++++++
+ 2 files changed, 112 insertions(+)
+ create mode 100644 tests/libqos/ppc64_pseries-machine.c
+
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index 5ce905bd82..b86aa52546 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -770,6 +770,7 @@ libqos-virtio-obj-y = $(libqos-spapr-obj-y) $(libqos-pc-obj-y) tests/libqos/virt
+ 
+ libqgraph-machines-obj-y = tests/libqos/x86_64_pc-machine.o
+ libqgraph-machines-obj-y += tests/libqos/raspi2-machine.o
++libqgraph-machines-obj-y += tests/libqos/ppc64_pseries-machine.o
+ 
+ libqgraph-pci-obj-y = $(libqos-pc-obj-y) $(libqos-spapr-obj-y)
+ libqgraph-pci-obj-y += $(libqgraph-machines-obj-y)
+diff --git a/tests/libqos/ppc64_pseries-machine.c b/tests/libqos/ppc64_pseries-machine.c
+new file mode 100644
+index 0000000000..689bb390bf
+--- /dev/null
++++ b/tests/libqos/ppc64_pseries-machine.c
+@@ -0,0 +1,111 @@
++/*
++ * libqos driver framework
++ *
++ * Copyright (c) 2018 Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License version 2 as published by the Free Software Foundation.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, see <http://www.gnu.org/licenses/>
++ */
++
++ #include "qemu/osdep.h"
++#include "libqtest.h"
++#include "libqos/qgraph.h"
++#include "pci-spapr.h"
++#include "libqos/malloc-spapr.h"
++
++typedef struct QSPAPR_pci_host QSPAPR_pci_host;
++typedef struct Qppc64_pseriesMachine Qppc64_pseriesMachine;
++
++struct QSPAPR_pci_host {
++    QOSGraphObject obj;
++    QPCIBusSPAPR pci;
++};
++
++struct Qppc64_pseriesMachine {
++    QOSGraphObject obj;
++    QGuestAllocator *alloc;
++    QSPAPR_pci_host bridge;
++};
++
++/* QSPAPR_pci_host */
++
++static QOSGraphObject *QSPAPR_host_get_device(void *obj, const char *device)
++{
++    QSPAPR_pci_host *host = obj;
++    if (!g_strcmp0(device, "pci-bus-spapr")) {
++        return &host->pci.obj;
++    }
++    printf("%s not present in QSPAPR_pci_host\n", device);
++    abort();
++}
++
++static void qos_create_QSPAPR_host(QSPAPR_pci_host *host,
++                                   QGuestAllocator *alloc)
++{
++    host->obj.get_device = QSPAPR_host_get_device;
++    qpci_init_spapr(&host->pci, global_qtest, alloc);
++}
++
++/* ppc64/pseries machine */
++
++static void spapr_destroy(QOSGraphObject *obj)
++{
++    Qppc64_pseriesMachine *machine = (Qppc64_pseriesMachine *) obj;
++    spapr_alloc_uninit(machine->alloc);
++    g_free(obj);
++}
++
++static void *spapr_get_driver(void *object, const char *interface)
++{
++    Qppc64_pseriesMachine *machine = object;
++    if (!g_strcmp0(interface, "guest_allocator")) {
++        return machine->alloc;
++    }
++
++    printf("%s not present in ppc64/pseries\n", interface);
++    abort();
++}
++
++static QOSGraphObject *spapr_get_device(void *obj, const char *device)
++{
++    Qppc64_pseriesMachine *machine = obj;
++    if (!g_strcmp0(device, "spapr-pci-host-bridge")) {
++        return &machine->bridge.obj;
++    }
++
++    printf("%s not present in ppc64/pseries\n", device);
++    abort();
++}
++
++static void *qos_create_machine_spapr(void)
++{
++    Qppc64_pseriesMachine *machine = g_new0(Qppc64_pseriesMachine, 1);
++    machine->obj.get_device = spapr_get_device;
++    machine->obj.get_driver = spapr_get_driver;
++    machine->obj.destructor = spapr_destroy;
++    machine->alloc =  spapr_alloc_init_flags(global_qtest,
++                                                ALLOC_NO_FLAGS);
++    qos_create_QSPAPR_host(&machine->bridge, machine->alloc);
++
++    return &machine->obj;
++}
++
++static void spapr_machine(void)
++{
++    qos_node_create_machine("ppc64/pseries", qos_create_machine_spapr);
++    qos_node_create_driver("spapr-pci-host-bridge", NULL);
++    qos_node_contains("ppc64/pseries", "spapr-pci-host-bridge", NULL);
++    qos_node_contains("spapr-pci-host-bridge", "pci-bus-spapr", NULL);
++}
++
++libqos_init(spapr_machine);
++
+-- 
+2.17.1
+

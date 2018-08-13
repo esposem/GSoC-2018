@@ -1,0 +1,126 @@
+From 8469a9c788315253d1c84b964af5e88999444412 Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Wed, 18 Jul 2018 16:32:49 +0200
+Subject: [PATCH v2 17/34] test/qgraph: arm/virt machine node
+
+Add arm/virt machine to the graph. This machine contains virtio-mmio, so
+its constructor must take care of setting it properly when called.
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/Makefile.include      |  1 +
+ tests/libqos/virt-machine.c | 90 +++++++++++++++++++++++++++++++++++++
+ 2 files changed, 91 insertions(+)
+ create mode 100644 tests/libqos/virt-machine.c
+
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index 8dfbe049e7..4659785baf 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -770,6 +770,7 @@ libqos-virtio-obj-y = $(libqos-spapr-obj-y) $(libqos-pc-obj-y) tests/libqos/virt
+ libqgraph-machines-obj-y = tests/libqos/x86_64_pc-machine.o
+ libqgraph-machines-obj-y += tests/libqos/raspi2-machine.o
+ libqgraph-machines-obj-y += tests/libqos/ppc64_pseries-machine.o
++libqgraph-machines-obj-y += tests/libqos/virt-machine.o
+ 
+ libqgraph-pci-obj-y = $(libqos-virtio-obj-y)
+ libqgraph-pci-obj-y += $(libqgraph-machines-obj-y)
+diff --git a/tests/libqos/virt-machine.c b/tests/libqos/virt-machine.c
+new file mode 100644
+index 0000000000..e23fb95191
+--- /dev/null
++++ b/tests/libqos/virt-machine.c
+@@ -0,0 +1,90 @@
++/*
++ * libqos driver framework
++ *
++ * Copyright (c) 2018 Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License version 2 as published by the Free Software Foundation.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, see <http://www.gnu.org/licenses/>
++ */
++
++#include "qemu/osdep.h"
++#include "libqtest.h"
++#include "libqos/malloc.h"
++#include "libqos/qgraph.h"
++#include "libqos/virtio-mmio.h"
++#include "libqos/malloc-generic.h"
++
++#define ARM_PAGE_SIZE               4096
++#define VIRTIO_MMIO_BASE_ADDR       0x0A003E00
++#define ARM_VIRT_RAM_ADDR           0x40000000
++#define ARM_VIRT_RAM_SIZE           0x20000000
++#define VIRTIO_MMIO_SIZE            0x00000200
++
++typedef struct QVirtioMachine QVirtioMachine;
++
++struct QVirtioMachine {
++    QOSGraphObject obj;
++    QGuestAllocator *alloc;
++    QVirtioMMIODevice virtio_mmio;
++};
++
++static void virtio_destroy(QOSGraphObject *obj)
++{
++    QVirtioMachine *machine = (QVirtioMachine *) obj;
++    generic_alloc_uninit(machine->alloc);
++    g_free(obj);
++}
++
++static void *virtio_get_driver(void *object, const char *interface)
++{
++    QVirtioMachine *machine = object;
++    if (!g_strcmp0(interface, "guest_allocator")) {
++        return machine->alloc;
++    }
++
++    printf("%s not present in arm/virtio\n", interface);
++    abort();
++}
++
++static QOSGraphObject *virtio_get_device(void *obj, const char *device)
++{
++    QVirtioMachine *machine = obj;
++    if (!g_strcmp0(device, "virtio-mmio")) {
++        return &machine->virtio_mmio.obj;
++    }
++
++    printf("%s not present in arm/virtio\n", device);
++    abort();
++}
++
++static void *qos_create_machine_arm_virt(void)
++{
++    QVirtioMachine *machine = g_new0(QVirtioMachine, 1);
++
++    machine->alloc = generic_alloc_init(ARM_VIRT_RAM_ADDR, ARM_VIRT_RAM_SIZE,
++                                        ARM_PAGE_SIZE);
++    qvirtio_mmio_init_device(&machine->virtio_mmio, VIRTIO_MMIO_BASE_ADDR,
++                             VIRTIO_MMIO_SIZE);
++
++    machine->obj.get_device = virtio_get_device;
++    machine->obj.get_driver = virtio_get_driver;
++    machine->obj.destructor = virtio_destroy;
++    return machine;
++}
++
++static void virtio_machine(void)
++{
++    qos_node_create_machine("arm/virt", qos_create_machine_arm_virt);
++    qos_node_contains("arm/virt", "virtio-mmio", NULL);
++}
++
++libqos_init(virtio_machine);
+-- 
+2.17.1
+
