@@ -47,6 +47,10 @@ and only test that are reached by them will be executed.
 ## Repository Overview
 This repository contains the directories for the various patchsets that have been sent upstream.
 
+Patch v3-continued (currently under revision):
+
+https://lists.gnu.org/archive/html/qemu-devel/2018-08/msg03901.html
+
 Patch v3 (currently under revision):
 
 https://lists.gnu.org/archive/html/qemu-devel/2018-08/msg02072.html

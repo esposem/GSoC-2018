@@ -1,0 +1,104 @@
+From 01e22e61c43fdf4ada48529574d0e34f02d62129 Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Fri, 17 Aug 2018 15:52:52 +0200
+Subject: [PATCH v5 13/16] test/qgraph: vmxnet3 test node
+
+Convert tests/vmxnet3-test in qgraph test node,
+vmxnet3-test. Since it's a nop test, node creation and
+initialization is made in the same file.
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/Makefile.include |  3 +--
+ tests/vmxnet3-test.c   | 39 ++++++++++++++++++++++++++++++---------
+ 2 files changed, 31 insertions(+), 11 deletions(-)
+
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index e60890adb9..9370f79f2c 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -258,7 +258,6 @@ check-qtest-i386-y += tests/tco-test$(EXESUF)
+ gcov-files-i386-y += hw/watchdog/watchdog.c hw/watchdog/wdt_ib700.c
+ check-qtest-i386-y += $(check-qtest-pci-y)
+ gcov-files-i386-y += $(gcov-files-pci-y)
+-check-qtest-i386-y += tests/vmxnet3-test$(EXESUF)
+ gcov-files-i386-y += hw/net/vmxnet3.c
+ gcov-files-i386-y += hw/net/net_rx_pkt.c
+ gcov-files-i386-y += hw/net/net_tx_pkt.c
+@@ -792,6 +791,7 @@ libqgraph-tests-obj-y += tests/nvme-test.o
+ libqgraph-tests-obj-y += tests/pcnet-test.o
+ libqgraph-tests-obj-y += tests/spapr-phb-test.o
+ libqgraph-tests-obj-y += tests/usb-hcd-ohci-test.o $(libqos-usb-obj-y)
++libqgraph-tests-obj-y += tests/vmxnet3-test.o
+ 
+ check-unit-y += tests/test-qgraph$(EXESUF)
+ tests/test-qgraph$(EXESUF): tests/test-qgraph.o $(libqgraph-obj-y)
+@@ -828,7 +828,6 @@ tests/e1000-test$(EXESUF): tests/e1000-test.o
+ tests/rtl8139-test$(EXESUF): tests/rtl8139-test.o $(libqos-pc-obj-y)
+ tests/pnv-xscom-test$(EXESUF): tests/pnv-xscom-test.o
+ tests/eepro100-test$(EXESUF): tests/eepro100-test.o
+-tests/vmxnet3-test$(EXESUF): tests/vmxnet3-test.o
+ tests/wdt_ib700-test$(EXESUF): tests/wdt_ib700-test.o
+ tests/tco-test$(EXESUF): tests/tco-test.o $(libqos-pc-obj-y)
+ tests/virtio-ccw-test$(EXESUF): tests/virtio-ccw-test.o
+diff --git a/tests/vmxnet3-test.c b/tests/vmxnet3-test.c
+index 159c0ad728..2bbd0352fa 100644
+--- a/tests/vmxnet3-test.c
++++ b/tests/vmxnet3-test.c
+@@ -9,23 +9,44 @@
+ 
+ #include "qemu/osdep.h"
+ #include "libqtest.h"
++#include "libqos/qgraph.h"
++
++typedef struct QVmxnet3 QVmxnet3;
++
++struct QVmxnet3 {
++    QOSGraphObject obj;
++};
+ 
+ /* Tests only initialization so far. TODO: Replace with functional tests */
+-static void nop(void)
++static void nop(void *obj, void *data, QGuestAllocator *alloc)
++{
++}
++
++static void vmxnet3_destructor(QOSGraphObject *obj)
+ {
++    QVmxnet3 *vmxnet3 = (QVmxnet3 *)obj;
++    g_free(vmxnet3);
+ }
+ 
+-int main(int argc, char **argv)
++static void *vmxnet3_create(void *pci_bus, QGuestAllocator *alloc, void *addr)
+ {
+-    int ret;
++    QVmxnet3 *vmxnet3 = g_new0(QVmxnet3, 1);
++    vmxnet3->obj.destructor = vmxnet3_destructor;
+ 
+-    g_test_init(&argc, &argv, NULL);
+-    qtest_add_func("/vmxnet3/nop", nop);
++    return &vmxnet3->obj;
++}
+ 
+-    qtest_start("-device vmxnet3");
+-    ret = g_test_run();
++static void vmxnet3_register_nodes(void)
++{
++    qos_node_create_driver("vmxnet3", vmxnet3_create);
++    qos_node_consumes("vmxnet3", "pci-bus", NULL);
++}
+ 
+-    qtest_end();
++libqos_init(vmxnet3_register_nodes);
+ 
+-    return ret;
++static void register_vmxnet3_test(void)
++{
++    qos_add_test("vmxnet3-test", "vmxnet3", nop, NULL);
+ }
++
++libqos_init(register_vmxnet3_test);
+-- 
+2.17.1
+

@@ -1,0 +1,110 @@
+From 165c0e6a7d5eed1cd9ed7677e45b963ddf0b8b20 Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Fri, 17 Aug 2018 12:48:27 +0200
+Subject: [PATCH v5 07/16] test/qgraph: ipoctal232 test node
+
+Convert tests/ipoctal232-test in qgraph test node,
+ipoctal232-test. Since it's a nop test, node creation and
+initialization is made in the same file.
+
+This test creates a tpci200 node that produces an interface ipack
+consumed by the ipoctal232 device.
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/Makefile.include  |  3 +--
+ tests/ipoctal232-test.c | 42 ++++++++++++++++++++++++++++++++---------
+ 2 files changed, 34 insertions(+), 11 deletions(-)
+
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index 1daee93de5..6a7848bd34 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -184,7 +184,6 @@ gcov-files-generic-y = qdev-monitor.c qmp.c
+ check-qtest-generic-y += tests/cdrom-test$(EXESUF)
+ 
+ gcov-files-ipack-y += hw/ipack/ipack.c
+-check-qtest-ipack-y += tests/ipoctal232-test$(EXESUF)
+ gcov-files-ipack-y += hw/char/ipoctal232.c
+ 
+ gcov-files-virtioserial-y += hw/char/virtio-console.c
+@@ -793,6 +792,7 @@ libqgraph-tests-obj-y += tests/virtio-net-test.o
+ libqgraph-tests-obj-y += tests/virtio-scsi-test.o
+ libqgraph-tests-obj-y += tests/ac97-test.o
+ libqgraph-tests-obj-y += tests/tpci200-test.o
++libqgraph-tests-obj-y += tests/ipoctal232-test.o
+ 
+ check-unit-y += tests/test-qgraph$(EXESUF)
+ tests/test-qgraph$(EXESUF): tests/test-qgraph.o $(libqgraph-obj-y)
+@@ -837,7 +837,6 @@ tests/wdt_ib700-test$(EXESUF): tests/wdt_ib700-test.o
+ tests/tco-test$(EXESUF): tests/tco-test.o $(libqos-pc-obj-y)
+ tests/virtio-ccw-test$(EXESUF): tests/virtio-ccw-test.o
+ tests/display-vga-test$(EXESUF): tests/display-vga-test.o
+-tests/ipoctal232-test$(EXESUF): tests/ipoctal232-test.o
+ tests/qom-test$(EXESUF): tests/qom-test.o
+ tests/test-hmp$(EXESUF): tests/test-hmp.o
+ tests/machine-none-test$(EXESUF): tests/machine-none-test.o
+diff --git a/tests/ipoctal232-test.c b/tests/ipoctal232-test.c
+index 684914164d..3514b89107 100644
+--- a/tests/ipoctal232-test.c
++++ b/tests/ipoctal232-test.c
+@@ -9,23 +9,47 @@
+ 
+ #include "qemu/osdep.h"
+ #include "libqtest.h"
++#include "libqos/qgraph.h"
++
++typedef struct QIpoctal232 QIpoctal232;
++
++struct QIpoctal232 {
++    QOSGraphObject obj;
++};
+ 
+ /* Tests only initialization so far. TODO: Replace with functional tests */
+-static void nop(void)
++static void nop(void *obj, void *data, QGuestAllocator *alloc)
++{
++}
++
++static void ipoctal232_destructor(QOSGraphObject *obj)
+ {
++    QIpoctal232 *ipoctal232 = (QIpoctal232 *) obj;
++    g_free(ipoctal232);
+ }
+ 
+-int main(int argc, char **argv)
++static void *ipoctal232_create(void *pci_bus, QGuestAllocator *alloc,
++                               void *addr)
+ {
+-    int ret;
++    QIpoctal232 *ipoctal232 = g_new0(QIpoctal232, 1);
++    ipoctal232->obj.destructor = ipoctal232_destructor;
+ 
+-    g_test_init(&argc, &argv, NULL);
+-    qtest_add_func("/ipoctal232/tpci200/nop", nop);
++    return &ipoctal232->obj;
++}
+ 
+-    qtest_start("-device tpci200,id=ipack0 -device ipoctal232,bus=ipack0.0");
+-    ret = g_test_run();
++static void ipoctal232_register_nodes(void)
++{
++    qos_node_create_driver("ipoctal232", ipoctal232_create);
++    qos_node_consumes("ipoctal232", "ipack", &(QOSGraphEdgeOptions) {
++        .extra_device_opts = "bus=ipack0.0",
++    });
++}
+ 
+-    qtest_end();
++libqos_init(ipoctal232_register_nodes);
+ 
+-    return ret;
++static void register_ipoctal232_test(void)
++{
++    qos_add_test("ipoctal232-test", "ipoctal232", nop, NULL);
+ }
++
++libqos_init(register_ipoctal232_test);
+-- 
+2.17.1
+

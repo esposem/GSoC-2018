@@ -1,0 +1,60 @@
+From bc42b41f8ece3328a3af2126b7380df168b80337 Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Mon, 20 Aug 2018 14:24:14 +0200
+Subject: [PATCH v5 00/16] qtest: finish sdhci-test and most nop test conversion to qgraph framework
+
+This series continues the QEMU tests conversion using the qgraph
+framework started in the previous series.
+
+In this series, I add the missing machines required to complete
+the sdhci-test started previously, and convert various nop tests.
+
+Based-on: 20180813101453.10200-1-e.emanuelegiuseppe@gmail.com
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+
+Emanuele Giuseppe Esposito (16):
+  test/qgraph: arm/smdkc210 machine node
+  test/qgraph: arm/sabrelite machine node
+  test/qgraph: arm/xlinx-zynq-a9 machine node
+  test/qgraph: aarch64/xlnx-zcu102 machine node
+  test/qgraph: ac97 test node
+  test/qgraph: tpci200 test node
+  test/qgraph: ipoctal232 test node
+  test/qgraph: ne2k_pci test node
+  test/qgraph: nvme test node
+  test/qgraph: pcnet test node
+  test/qgraph: spapr-phb test node
+  test/qgraph: usb-hcd-ohci test node
+  test/qgraph: vmxnet3 test node
+  test/qgraph: es1370 test node
+  test/qgraph: eepro100 test node
+  test/qgraph: e1000 test node
+
+ tests/Makefile.include                | 48 +++++++--------
+ tests/ac97-test.c                     | 39 ++++++++++---
+ tests/e1000-test.c                    | 60 ++++++++++++-------
+ tests/eepro100-test.c                 | 61 ++++++++++++-------
+ tests/es1370-test.c                   | 39 ++++++++++---
+ tests/ipoctal232-test.c               | 42 +++++++++++---
+ tests/libqos/sabrelite-machine.c      | 82 ++++++++++++++++++++++++++
+ tests/libqos/smdkc210-machine.c       | 82 ++++++++++++++++++++++++++
+ tests/libqos/xilinx-zynq-a9-machine.c | 84 +++++++++++++++++++++++++++
+ tests/libqos/xlnx-zcu102-machine.c    | 83 ++++++++++++++++++++++++++
+ tests/ne2000-test.c                   | 39 ++++++++++---
+ tests/nvme-test.c                     | 43 ++++++++++----
+ tests/pcnet-test.c                    | 39 ++++++++++---
+ tests/sdhci-test.c                    | 49 ----------------
+ tests/spapr-phb-test.c                | 28 ++++-----
+ tests/tpci200-test.c                  | 60 ++++++++++++++++---
+ tests/usb-hcd-ohci-test.c             | 46 +++++++++++----
+ tests/vmxnet3-test.c                  | 39 ++++++++++---
+ 18 files changed, 744 insertions(+), 219 deletions(-)
+ create mode 100644 tests/libqos/sabrelite-machine.c
+ create mode 100644 tests/libqos/smdkc210-machine.c
+ create mode 100644 tests/libqos/xilinx-zynq-a9-machine.c
+ create mode 100644 tests/libqos/xlnx-zcu102-machine.c
+
+-- 
+2.17.1
+

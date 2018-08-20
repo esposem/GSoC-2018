@@ -1,0 +1,107 @@
+From 0a090af7e9532a86fed4d7c11e528b3a9abae488 Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Fri, 17 Aug 2018 13:04:12 +0200
+Subject: [PATCH v5 08/16] test/qgraph: ne2k_pci test node
+
+Convert tests/ne2000-test in qgraph test node,
+ne2000-test. Since it's a nop test, node creation and
+initialization is made in the same file.
+
+The actual device consumed by the test is ne2k_pci.
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/Makefile.include |  3 +--
+ tests/ne2000-test.c    | 39 ++++++++++++++++++++++++++++++---------
+ 2 files changed, 31 insertions(+), 11 deletions(-)
+
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index 6a7848bd34..dea79797c5 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -212,7 +212,6 @@ gcov-files-pci-y += hw/net/pcnet.c
+ gcov-files-pci-y += hw/net/pcnet-pci.c
+ check-qtest-pci-y += tests/eepro100-test$(EXESUF)
+ gcov-files-pci-y += hw/net/eepro100.c
+-check-qtest-pci-y += tests/ne2000-test$(EXESUF)
+ gcov-files-pci-y += hw/net/ne2000.c
+ check-qtest-pci-y += tests/nvme-test$(EXESUF)
+ gcov-files-pci-y += hw/block/nvme.c
+@@ -793,6 +792,7 @@ libqgraph-tests-obj-y += tests/virtio-scsi-test.o
+ libqgraph-tests-obj-y += tests/ac97-test.o
+ libqgraph-tests-obj-y += tests/tpci200-test.o
+ libqgraph-tests-obj-y += tests/ipoctal232-test.o
++libqgraph-tests-obj-y += tests/ne2000-test.o
+ 
+ check-unit-y += tests/test-qgraph$(EXESUF)
+ tests/test-qgraph$(EXESUF): tests/test-qgraph.o $(libqgraph-obj-y)
+@@ -832,7 +832,6 @@ tests/pcnet-test$(EXESUF): tests/pcnet-test.o
+ tests/pnv-xscom-test$(EXESUF): tests/pnv-xscom-test.o
+ tests/eepro100-test$(EXESUF): tests/eepro100-test.o
+ tests/vmxnet3-test$(EXESUF): tests/vmxnet3-test.o
+-tests/ne2000-test$(EXESUF): tests/ne2000-test.o
+ tests/wdt_ib700-test$(EXESUF): tests/wdt_ib700-test.o
+ tests/tco-test$(EXESUF): tests/tco-test.o $(libqos-pc-obj-y)
+ tests/virtio-ccw-test$(EXESUF): tests/virtio-ccw-test.o
+diff --git a/tests/ne2000-test.c b/tests/ne2000-test.c
+index b7cf3dd2f5..aeb2232e2a 100644
+--- a/tests/ne2000-test.c
++++ b/tests/ne2000-test.c
+@@ -9,23 +9,44 @@
+ 
+ #include "qemu/osdep.h"
+ #include "libqtest.h"
++#include "libqos/qgraph.h"
++
++typedef struct QNe2k_pci QNe2k_pci;
++
++struct QNe2k_pci {
++    QOSGraphObject obj;
++};
+ 
+ /* Tests only initialization so far. TODO: Replace with functional tests */
+-static void pci_nop(void)
++static void pci_nop(void *obj, void *data, QGuestAllocator *alloc)
++{
++}
++
++static void ne2k_pci_destructor(QOSGraphObject *obj)
+ {
++    QNe2k_pci *ne2k_pci = (QNe2k_pci *)obj;
++    g_free(ne2k_pci);
+ }
+ 
+-int main(int argc, char **argv)
++static void *ne2k_pci_create(void *pci_bus, QGuestAllocator *alloc, void *addr)
+ {
+-    int ret;
++    QNe2k_pci *ne2k_pci = g_new0(QNe2k_pci, 1);
++    ne2k_pci->obj.destructor = ne2k_pci_destructor;
+ 
+-    g_test_init(&argc, &argv, NULL);
+-    qtest_add_func("/ne2000/pci/nop", pci_nop);
++    return &ne2k_pci->obj;
++}
+ 
+-    qtest_start("-device ne2k_pci");
+-    ret = g_test_run();
++static void ne2000_register_nodes(void)
++{
++    qos_node_create_driver("ne2k_pci", ne2k_pci_create);
++    qos_node_consumes("ne2k_pci", "pci-bus", NULL);
++}
+ 
+-    qtest_end();
++libqos_init(ne2000_register_nodes);
+ 
+-    return ret;
++static void register_ne2000_test(void)
++{
++    qos_add_test("ne2000-test", "ne2k_pci", pci_nop, NULL);
+ }
++
++libqos_init(register_ne2000_test);
+\ No newline at end of file
+-- 
+2.17.1
+

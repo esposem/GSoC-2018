@@ -1,0 +1,135 @@
+From bc42b41f8ece3328a3af2126b7380df168b80337 Mon Sep 17 00:00:00 2001
+From: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+Date: Fri, 17 Aug 2018 16:16:22 +0200
+Subject: [PATCH v5 16/16] test/qgraph: e1000 test node
+
+Convert tests/e1000-test in qgraph test nodes,
+e1000-test. Since it's a nop test, node creation and
+initialization is made in the same file.
+In addition, all nodes share the same constructor and
+destructor.
+
+Signed-off-by: Emanuele Giuseppe Esposito <e.emanuelegiuseppe@gmail.com>
+---
+ tests/Makefile.include |  3 +--
+ tests/e1000-test.c     | 60 ++++++++++++++++++++++++++++--------------
+ 2 files changed, 41 insertions(+), 22 deletions(-)
+
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index e7893cac65..546fdf603c 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -202,7 +202,6 @@ gcov-files-virtio-y += i386-softmmu/hw/char/virtio-serial-bus.c
+ check-qtest-virtio-y += $(check-qtest-virtioserial-y)
+ gcov-files-virtio-y += $(gcov-files-virtioserial-y)
+ 
+-check-qtest-pci-y += tests/e1000-test$(EXESUF)
+ gcov-files-pci-y += hw/net/e1000.c
+ gcov-files-pci-y += hw/net/e1000e.c hw/net/e1000e_core.c
+ check-qtest-pci-y += tests/rtl8139-test$(EXESUF)
+@@ -792,6 +791,7 @@ libqgraph-tests-obj-y += tests/usb-hcd-ohci-test.o $(libqos-usb-obj-y)
+ libqgraph-tests-obj-y += tests/vmxnet3-test.o
+ libqgraph-tests-obj-y += tests/es1370-test.o
+ libqgraph-tests-obj-y += tests/eepro100-test.o
++libqgraph-tests-obj-y += tests/e1000-test.o
+ 
+ check-unit-y += tests/test-qgraph$(EXESUF)
+ tests/test-qgraph$(EXESUF): tests/test-qgraph.o $(libqgraph-obj-y)
+@@ -824,7 +824,6 @@ tests/m25p80-test$(EXESUF): tests/m25p80-test.o
+ tests/i440fx-test$(EXESUF): tests/i440fx-test.o $(libqos-pc-obj-y)
+ tests/q35-test$(EXESUF): tests/q35-test.o $(libqos-pc-obj-y)
+ tests/fw_cfg-test$(EXESUF): tests/fw_cfg-test.o $(libqos-pc-obj-y)
+-tests/e1000-test$(EXESUF): tests/e1000-test.o
+ tests/rtl8139-test$(EXESUF): tests/rtl8139-test.o $(libqos-pc-obj-y)
+ tests/pnv-xscom-test$(EXESUF): tests/pnv-xscom-test.o
+ tests/wdt_ib700-test$(EXESUF): tests/wdt_ib700-test.o
+diff --git a/tests/e1000-test.c b/tests/e1000-test.c
+index 0c5fcdcc44..93e47abc2c 100644
+--- a/tests/e1000-test.c
++++ b/tests/e1000-test.c
+@@ -9,22 +9,13 @@
+ 
+ #include "qemu/osdep.h"
+ #include "libqtest.h"
++#include "libqos/qgraph.h"
+ 
+-/* Tests only initialization so far. TODO: Replace with functional tests */
+-static void test_device(gconstpointer data)
+-{
+-    const char *model = data;
+-    QTestState *s;
+-    char *args;
++typedef struct QE1000 QE1000;
+ 
+-    args = g_strdup_printf("-device %s", model);
+-    s = qtest_start(args);
+-
+-    if (s) {
+-        qtest_quit(s);
+-    }
+-    g_free(args);
+-}
++struct QE1000 {
++    QOSGraphObject obj;
++};
+ 
+ static const char *models[] = {
+     "e1000",
+@@ -33,19 +24,48 @@ static const char *models[] = {
+     "e1000-82545em",
+ };
+ 
+-int main(int argc, char **argv)
++/* Tests only initialization so far. TODO: Replace with functional tests */
++static void nop(void *obj, void *data, QGuestAllocator *alloc)
++{
++}
++
++static void e1000_destructor(QOSGraphObject *obj)
++{
++    QE1000 *e1000 = (QE1000 *)obj;
++    g_free(e1000);
++}
++
++static void *e1000_create(void *pci_bus, QGuestAllocator *alloc, void *addr)
++{
++    QE1000 *e1000 = g_new0(QE1000, 1);
++    e1000->obj.destructor = e1000_destructor;
++
++    return &e1000->obj;
++}
++
++static void e1000_register_nodes(void)
+ {
+     int i;
+ 
+-    g_test_init(&argc, &argv, NULL);
++    for (i = 0; i < ARRAY_SIZE(models); i++) {
++        qos_node_create_driver(models[i], e1000_create);
++        qos_node_consumes(models[i], "pci-bus", NULL);
++    }
++}
++
++libqos_init(e1000_register_nodes);
++
++static void register_e1000_test(void)
++{
++    int i;
+ 
+     for (i = 0; i < ARRAY_SIZE(models); i++) {
+         char *path;
+ 
+-        path = g_strdup_printf("e1000/%s", models[i]);
+-        qtest_add_data_func(path, models[i], test_device);
++        path = g_strdup_printf("%s-e1000-test", models[i]);
++        qos_add_test(path, models[i], nop, NULL);
+         g_free(path);
+     }
+-
+-    return g_test_run();
+ }
++
++libqos_init(register_e1000_test);
+-- 
+2.17.1
+
